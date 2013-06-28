@@ -59,7 +59,7 @@ class FundingCheckingPipe(ValidationPipe):
 
         funding_nodes = data.findall('.//funding-group')
 
-        status, description = [STATUS_OK, etree.tostring(funding_nodes[0])] if funding_nodes != [] else [STATUS_WARNING, 'no funding-group']   
+        status, description = [STATUS_OK, etree.tostring(funding_nodes[0])] if funding_nodes != [] else [STATUS_WARNING, 'no funding-group']  
         if not status == STATUS_OK:
             ack_node = data.findall('.//ack')
             description = etree.tostring(ack_node[0]) if ack_node != [] else 'no funding-group and no ack'
@@ -69,6 +69,128 @@ class FundingCheckingPipe(ValidationPipe):
     def _contains_number(self, text):
         # if text contains any number
         return any((True for n in xrange(10) if str(n) in text))
+
+
+class ArticleTypeValidationPipe(ValidationPipe):
+    """
+    Check @article-type
+    Expected values and dependences on other elements/attributes:
+
+    No dependences:
+        abstract, addendum, brief-report, case-report, data-paper, discussion, introduction, news, obituary, oration, other, research-article, review-article
+    Depending on related-article:
+        @article-type:
+            article-commentary, correction, editorial, expression-of-concern, in-brief, letter, reply, retraction,
+        @related-article-type:
+            commentary-article, corrected-article, commentary-article, object-of-concern, article-reference, commentary-article, letter, retracted-article
+    Depending on product:
+        book-review, product-review,
+    Especific validations:
+        meeting reports or abstracts
+        reply to letter
+        reply_as_independent_article
+        editorial
+        letter
+    """
+    _stage_ = '@article-type'
+    _no_dep_ = [
+        'abstract',
+        'addendum',
+        'brief-report',
+        'case-report',
+        'data-paper',
+        'discussion',
+        'introduction',
+        'news',
+        'obituary',
+        'oration',
+        'other',
+        'research-article',
+        'review-article',
+    ]
+    _dep_related_article = {
+        'retraction': 'retracted-article',
+        'editorial': 'commentary-article',
+        'article-commentary': 'commentary-article',
+        'in-brief': 'article-reference',
+        'expression-of-concern': 'object-of-concern',
+        'letter': 'commentary-article',
+        'reply': 'letter',
+        'correction': 'corrected-article',
+    }
+    _other_dep = [
+        'book-review',
+        'product-review',
+        'meeting-report',
+        'reply',
+        'editorial',
+        'letter',
+    ]
+
+    def validate(self, package_analyzer):
+        data = package_analyzer.xml
+
+        status = STATUS_ERROR
+
+        is_valid_value, article_type, has_dependences = self._value(data)
+
+        description = '@article-type not found' if article_type is None else article_type + ' is invalid value for @article-type' if not is_valid_value else ''
+
+        if is_valid_value:
+
+        return []
+
+    def _value(self, data):
+        """
+        Find @article-type in ``data``
+        Return if value is valid
+        Return if has dependences
+        """
+        article_type = data.attrib['article-type'] if 'article-type' in data.attrib.keys() else None
+        valid = [True, False] if article_type in self._no_dep_ else [True, True] if article_type in self._dep_related_article.keys() or  article_type in self._other_dep else [False, False]
+
+        return [valid, article_type, has_dependences]
+
+    def _validate_meeting_reports_or_abstracts(self, data):
+        # @article-type='meeting-report'
+        # name of conference in article-title
+        # The <article-meta> should contain article citation information, but should not include author information.
+        # Tag each abstract in a separate <sub-article> with <title> of the presentation/paper abstract. The full citation of the abstract, including author/presenter should be captured in the <front-stub> of the <sub-article>.
+        # The pagination tagged in the <front-stub>must reflect the actual pages on which the individual abstract appears. This will not always be the same as the parent <article> pagination.
+        return []
+
+    def _validate_product(self, data):
+        # product
+        return []
+
+    def _validate_related_article(self, data):
+        # @article-type='??'
+        # related-article/@related-article-type='??'
+        return []
+
+    def _validate_editorial(self, data):
+        # @article-type='editorial'
+        # related-article/@related-article-type='commentary-article'
+        # signature
+        return []
+
+    def _validate_letter(self, data):
+        # @article-type='letter'
+        # related-article/@related-article-type='commentary-article'
+        # contrib-group
+        # signature
+        return []
+
+    def _validate_reply_to_letter(self, data):
+        # response
+        return []
+
+    def _validate_reply_as_independent_article(self, data):
+        # @article-type='reply'
+        # related-article/@related-article-type='letter'
+        # contrib-group
+        # signatures
+        return []
 
 
 ppl = plumber.Pipeline(FundingCheckingPipe)
