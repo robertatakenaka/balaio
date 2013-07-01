@@ -13,6 +13,39 @@ STATUS_WARNING = 'w'
 STATUS_ERROR = 'e'
 
 
+def has_element(etree, xpath):
+    """
+    Returns [STATUS_OK, ''] if ``xpath`` exists
+    Returns [STATUS_ERROR, ``xpath`` not found] if ``xpath`` exists
+    """
+    status = STATUS_OK if etree.findall(xpath) != [] else STATUS_ERROR
+    description = '' if status == STATUS_OK else xpath + ' not found'
+    return [status, description]
+
+
+def attrib_value(etree, xpath, attr_name):
+    nodes = etree.findall(xpath)
+    values = [node.attrib[attr_name] for node in nodes if attr_name in node.attrib.keys()]
+    return None if values is [] else values[0] if len(values) == 1 else values
+
+
+def key_value(dictionary, key):
+    return dictionary[key] if key in dictionary.keys() else None
+
+
+def format_description(xpath, found_value, matched, expected=''):
+    if expected != '':
+        expected = '. Expected value is ' + expected
+    return xpath + ' not found' if found_value is None else found_value + ' is invalid value for ' + xpath + expected if not matched else ''
+
+
+def join_results(results):
+    status = any((result[0] for result in results if result[0] == STATUS_ERROR))
+    status = STATUS_ERROR if status is True else STATUS_OK
+    description = [result[1] for result in results if result[1] != '']
+    return [status, '\n'.join(description)]
+
+
 class ValidationPipe(plumber.Pipe):
     """
     Specialized Pipe which validates the data and notifies the result
@@ -59,7 +92,7 @@ class FundingCheckingPipe(ValidationPipe):
 
         funding_nodes = data.findall('.//funding-group')
 
-        status, description = [STATUS_OK, etree.tostring(funding_nodes[0])] if funding_nodes != [] else [STATUS_WARNING, 'no funding-group']  
+        status, description = [STATUS_OK, etree.tostring(funding_nodes[0])] if funding_nodes != [] else [STATUS_WARNING, 'no funding-group']
         if not status == STATUS_OK:
             ack_node = data.findall('.//ack')
             description = etree.tostring(ack_node[0]) if ack_node != [] else 'no funding-group and no ack'
@@ -108,7 +141,7 @@ class ArticleTypeValidationPipe(ValidationPipe):
         'research-article',
         'review-article',
     ]
-    _dep_related_article = {
+    _dep_related = {
         'retraction': 'retracted-article',
         'editorial': 'commentary-article',
         'article-commentary': 'commentary-article',
@@ -118,79 +151,107 @@ class ArticleTypeValidationPipe(ValidationPipe):
         'reply': 'letter',
         'correction': 'corrected-article',
     }
-    _other_dep = [
-        'book-review',
-        'product-review',
-        'meeting-report',
-        'reply',
-        'editorial',
-        'letter',
-    ]
+    _other_validations = {
+        'book-review': '_validate_book_review',
+        'product-review': '_validate_product_review',
+        'meeting-report': '_validate_meeting_reports_or_abstracts',
+        'reply': '_validate_reply',
+        'editorial': '_validate_editorial',
+        'letter': '_validate_letter',
+    }
 
     def validate(self, package_analyzer):
         data = package_analyzer.xml
+        results = []
 
-        status = STATUS_ERROR
+        # get value of @article-type and check if it is valid
+        article_type = attrib_value(data, '.', 'article-type')
+        is_valid = self.is_valid(article_type)
+        description = format_description('@article-type', article_type, is_valid)
+        status = STATUS_OK if is_valid else STATUS_ERROR       
 
-        is_valid_value, article_type, has_dependences = self._value(data)
+        # validates according to the article type
+        if article_type in self._other_validations.keys():
+            self._other_validations = {
+                'book-review': self._validate_book_review,
+                'product-review': self._validate_product_review,
+                'meeting-report': self._validate_meeting_reports_or_abstracts,
+                'reply': self._validate_reply,
+                'editorial': self._validate_editorial,
+                'letter': self._validate_letter,
+            }
+            status, description = self._other_validations[article_type](data)
+        else:
+            status, description = self._validate_dependence(data, article_type)
 
-        description = '@article-type not found' if article_type is None else article_type + ' is invalid value for @article-type' if not is_valid_value else ''
+        return [status, description]
 
-        if is_valid_value:
-
-        return []
-
-    def _value(self, data):
+    def is_valid(self, article_type):
         """
-        Find @article-type in ``data``
-        Return if value is valid
-        Return if has dependences
+        Return True if @article-type is valid
         """
-        article_type = data.attrib['article-type'] if 'article-type' in data.attrib.keys() else None
-        valid = [True, False] if article_type in self._no_dep_ else [True, True] if article_type in self._dep_related_article.keys() or  article_type in self._other_dep else [False, False]
+        return article_type in self._no_dep_ or article_type in self._dep_related.keys() or article_type in self._other_validations.keys()
 
-        return [valid, article_type, has_dependences]
+    def _validate_dependence(self, data, article_type):
+        related_article_dep = key_value(self._dep_related, article_type)
+        if not related_article_dep is None:
+            related_article_type = attrib_value(data, './/article-meta/related-article', 'related-article-type')
+            is_valid = related_article_type == related_article_dep
+            description = format_description('@related-article-type', related_article_type, is_valid, related_article_dep)
+            status = STATUS_OK if is_valid else STATUS_ERROR
+        return [status, description]
 
-    def _validate_meeting_reports_or_abstracts(self, data):
+    def _validate_book_review(self, data, article_type):
+        results = {}
+        results.append(self._validate_dependence(data, article_type))
+        results.append(has_element(data, './/article-meta/product'))
+        return join_results(results)
+
+    def _validate_product_review(self, data, article_type):
+        results = {}
+        results.append(self._validate_dependence(data, article_type))
+        results.append(has_element(data, './/article-meta/product'))
+        return join_results(results)
+
+    def _validate_editorial(self, data, article_type):
+        results = {}
+        results.append(self._validate_dependence(data, article_type))
+        results.append(has_element(data, './/body//sig'))
+        return join_results(results)
+
+    def _validate_letter(self, data, article_type):
+        # @article-type='letter'
+        # related-article/@related-article-type='commentary-article'
+        # contrib-group
+        # signature
+        results = []
+        results.append(self._validate_dependence(data, article_type))
+        results.append(has_element(data, './/body//sig'))
+        results.append(has_element(data, './/article-meta/contrib-group'))
+
+        return join_results(results)
+
+    def _validate_reply(self, data, article_type):
+        # @article-type='reply'
+        # related-article/@related-article-type='letter'
+        # contrib-group
+        # signatures
+        results = []
+        results.append(self._validate_dependence(data, article_type))
+        results.append(has_element(data, './/body//sig'))
+        results.append(has_element(data, './/article-meta/contrib-group'))
+
+        return join_results(results)
+
+    def _validate_meeting_reports_or_abstracts(self, data, article_type):
         # @article-type='meeting-report'
         # name of conference in article-title
         # The <article-meta> should contain article citation information, but should not include author information.
         # Tag each abstract in a separate <sub-article> with <title> of the presentation/paper abstract. The full citation of the abstract, including author/presenter should be captured in the <front-stub> of the <sub-article>.
         # The pagination tagged in the <front-stub>must reflect the actual pages on which the individual abstract appears. This will not always be the same as the parent <article> pagination.
-        return []
-
-    def _validate_product(self, data):
-        # product
-        return []
-
-    def _validate_related_article(self, data):
-        # @article-type='??'
-        # related-article/@related-article-type='??'
-        return []
-
-    def _validate_editorial(self, data):
-        # @article-type='editorial'
-        # related-article/@related-article-type='commentary-article'
-        # signature
-        return []
-
-    def _validate_letter(self, data):
-        # @article-type='letter'
-        # related-article/@related-article-type='commentary-article'
-        # contrib-group
-        # signature
-        return []
-
-    def _validate_reply_to_letter(self, data):
-        # response
-        return []
-
-    def _validate_reply_as_independent_article(self, data):
-        # @article-type='reply'
-        # related-article/@related-article-type='letter'
-        # contrib-group
-        # signatures
-        return []
+        status = STATUS_OK
+        description = ''
+        return [status, description]
 
 
 ppl = plumber.Pipeline(FundingCheckingPipe)
