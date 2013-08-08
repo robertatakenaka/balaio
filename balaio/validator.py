@@ -319,6 +319,76 @@ class ArticleSectionValidationPipe(vpipes.ValidationPipe):
             r = [STATUS_WARNING, 'Missing .//article-categories/subj-group[@subj-group-type="heading"]']
         return r
 
+
+class ArticlePubDateValidationPipe(vpipes.ValidationPipe):
+    """
+    Validate the publication dates ('.//article-meta/pub-date')
+    """
+    __requires__ = ['_notifier', '_scieloapi', '_sapi_tools', '_pkg_analyzer']
+    _stage_ = 'ArticlePubDateValidationPipe'
+
+    def validate(self, item):
+        """
+        Performs a validation to one `item` of data iterator.
+
+        `item` is a tuple comprised of instances of models.Attempt, a
+        checkin.PackageAnalyzer, a dict of journal data and a dict of issue.
+        """
+        #ecorrected, pcorrected, eretracted, pretracted
+        VALID_PUB_TYPES = ['epub', 'ppub', 'epub-ppub', 'epreprint', 'ppreprint', 'collection']
+        VALID_PUB_FORMAT = ['print', 'electronic', 'video', 'audio', 'ebook', 'online-only']
+
+        attr_values = []
+
+        attempt, pkg_analyzer, journal_data, issue_data = item
+        description = []
+        xml_tree = pkg_analyzer.xml
+        xml_dates = xml_tree.findall('.//article-meta/pub-date')
+        for xml_date in xml_dates:
+            pub_type = xml_date.attrib.get('pub-type', None)
+            publication_format = xml_date.attrib.get('publication-format', None)
+
+            if pub_type and publication_format:
+                description.append('Do not use at the same time @pub-type and @publication-format: ' + etree.tostring(xml_date))
+            elif not pub_type and not publication_format:
+                description.append('Use @pub-type or @publication-format:' + etree.tostring(xml_date))
+            elif pub_type:
+                if pub_type in VALID_PUB_TYPES:
+                    if pub_type in attr_values:
+                        description.append('Do not use the value ' + pub_type + ' again for @pub-type')
+                    attr_values.append(pub_type)
+                else:
+                    description.append('Invalid value for @pub-type. Valid values: ' + ','.join(VALID_PUB_TYPES))
+            elif publication_format:
+                if not publication_format in VALID_PUB_FORMAT:
+                    description.append('Invalid value for @publication-format. Valid values: ' + ','.join(VALID_PUB_FORMAT))
+
+                if publication_format in attr_values:
+                    description.append('Do not use the value ' + publication_format + ' again for @publication-format')
+                attr_values.append(publication_format)
+
+            month = xml_date.findtext('month')
+            year = xml_date.findtext('year')
+            if year:
+                if not (year.isdigit() and len(year) == 4):
+                    description.append('Invalid value for year: ' + year)
+            else:
+                description.append('Missing year')
+
+            if month:
+                if month.isdigit():
+                    if not month in [str(i) for i in range(1, 13)]:
+                        description.append('Invalid value for month: ' + month + '. Valid values:' + ','.join(months))
+                else:
+
+            else:
+                description.append('Missing month')
+            
+
+            season = xml_date.findtext('season')
+
+        return r
+
 if __name__ == '__main__':
     utils.setup_logging()
     config = utils.Configuration.from_env()
