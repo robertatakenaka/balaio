@@ -58,6 +58,42 @@ Response::
   ]
 
 
+Get a single ticket
+-------------------
+
+Request::
+
+  GET /api/v1/tickets/:id/
+
+Parameters:
+
+  **--**
+
+Optional Parameters:
+
+  **callback**
+
+    *String* of the callback identifier to be returned when using JSONP.  
+
+Response::
+
+  {
+      "articlepkg_id": 1,
+      "id": "1",
+      "finished_at": "2012-07-24T21:59:23.909404",
+      "is_open": true,
+      "resource_uri": "/api/v1/tickets/1/",
+      "started_at": "2012-07-24T21:53:23.909404",
+      "comments": [
+        "comments ...",
+        "comments ...",
+        "comments ... ",
+      ],
+      
+  }
+  
+
+
 Open a ticket
 -------------
 
@@ -81,7 +117,8 @@ Optional Parameters:
 
     *String* of the callback identifier to be returned when using JSONP.
 
-Payload:
+Payload::
+
   {
       "articlepkg_id": 1,
       "is_open": true,
@@ -90,6 +127,7 @@ Payload:
   }
 
 Response::
+
   {
       "articlepkg_id": 1,
       "id": "1",
@@ -101,7 +139,7 @@ Response::
         "comments",
       ],
       
-    }
+  }
 
 
 Update a ticket
@@ -128,10 +166,13 @@ Optional Parameters:
 
     *String* of the callback identifier to be returned when using JSONP.
 
-Payload:
+Payload::
+
   {
       "is_open": false,
-      "comments": "comments",
+      "comments": [
+        "comments",
+      ],
       "finished_at": "2012-07-24T21:53:23.909404",
   }
 
@@ -140,5 +181,4 @@ Response::
   HTTP STATUS CODE
 
   202 Accepted 
-
 
