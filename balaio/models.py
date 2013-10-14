@@ -84,12 +84,11 @@ class Attempt(Base):
         return "<Attempt('%s, %s')>" % (self.id, self.package_checksum)
 
     @classmethod
-    def get_from_package(cls, package, session):
+    def get_from_package(cls, package):
         """
         Get an Attempt for a package.
 
         :param package: instance of :class:`checkin.ArticlePackage`.
-        :param session: sqlalchemy db session
         """
         attempt = Attempt(package_checksum=package.checksum,
                           is_valid=False,
@@ -99,7 +98,6 @@ class Attempt(Base):
 
         if package.is_valid_package() and (meta['journal_eissn'] or meta['journal_pissn']):
             attempt.is_valid = True
-
         return attempt
 
 
@@ -137,7 +135,7 @@ class ArticlePkg(Base):
         return "<ArticlePkg('%s, %s')>" % (self.id, self.article_title)
 
     @classmethod
-    def get_or_create_from_package(cls, package, session):
+    def get_or_create_from_package(cls, package, session, logging):
         """
         Get or create an ArticlePkg for a package.
 
@@ -146,6 +144,7 @@ class ArticlePkg(Base):
         """
         meta = package.meta
 
+        
         try:
             article_pkg = session.query(ArticlePkg).filter_by(article_title=meta['article_title']).one()
         except MultipleResultsFound as e:
@@ -347,4 +346,3 @@ class Checkpoint(Base):
                     finished_at=str(self.ended_at),
                     notices=[n.to_dict() for n in self.messages]
                         )
-

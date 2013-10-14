@@ -207,9 +207,7 @@ def get_attempt(package):
     :param package: filesystem path to a package
     """
     config = utils.Configuration.from_env()
-
-    CheckinNotifier = checkin_notifier_factory(config)
-
+    #CheckinNotifier = notifier.checkin_notifier_factory(config)
     logger.info('Analyzing package: %s' % package)
 
     with PackageAnalyzer(package) as pkg:
@@ -222,29 +220,33 @@ def get_attempt(package):
 
             session = Session()
 
-            attempt = models.Attempt.get_from_package(pkg, session)
-            attempt_notifier = CheckinNotifier(attempt)
-            attempt_notifier.start()
-
+            attempt = models.Attempt.get_from_package(pkg)
             session.add(attempt)
+            logging.debug('passou session.add(attempt)')
+            #attempt_notifier = CheckinNotifier(attempt)
+            #attempt_notifier.start()
+            import pdb; pdb.set_trace()
 
             try:
-                article_pkg = models.ArticlePkg.get_or_create_from_package(pkg, session)
+                
+                article_pkg = models.ArticlePkg.get_or_create_from_package(pkg, session, logging)
+                logging.debug('passou article_pkg = models.ArticlePkg.get_or_create_from_package(pkg, session)')
                 if article_pkg not in session:
                     session.add(article_pkg)
+                logging.debug('passou session.add(article_pkg)')
             except:
                 attempt.is_valid = False
-                attempt_notifier.tell('Failed to load an ArticlePkg. The Attempt was invalidated.', models.Status.error, 'Checkin')
+                #attempt_notifier.tell('Failed to load an ArticlePkg. The Attempt was invalidated.', models.Status.error, 'Checkin')
                 logging.error('Failed to load an ArticlePkg. The Attempt was invalidated.')
             else:
                 attempt.articlepkg = article_pkg
-
+                logging.debug('passou attempt.articlepkg = article_pkg')
             session.commit()
-            attempt_notifier.tell('Attempt created.', models.Status.ok, 'Checkin')
-            logging.error('Attempt created.')
+
+            #attempt_notifier.end()
+            logging.debug('passou session.commit()')
         except IOError:
             session.rollback()
-            attempt_notifier.tell('The package %s had been deleted during analysis' % package, models.Status.error, 'Checkin')
             logger.error('The package %s had been deleted during analysis' % package)
             raise ValueError('The package %s had been deleted during analysis' % package)
         except:
@@ -252,7 +254,6 @@ def get_attempt(package):
             import traceback
 
             session.rollback()
-            attempt_notifier.tell('Unexpected error! The package analysis for %s was aborted.' % package, models.Status.error, 'Checkin')
             logger.error('Unexpected error! The package analysis for %s was aborted. Traceback: %s' % (
                 package, traceback.print_tb(exc_traceback)))
             raise ValueError('Unexpected error! The package analysis for %s was aborted.' % package)
